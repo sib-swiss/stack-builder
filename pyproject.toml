@@ -1,0 +1,17 @@
+
+[tool.pylint.'MESSAGES CONTROL']
+load-plugins = "pylint.extensions.docparams"
+default-docstring-type = "sphinx"
+disable = "invalid-name,too-many-arguments,too-many-instance-attributes,too-few-public-methods,fixme"
+output-format = "text"
+reports = "no"
+#min-similarity-lines = 6
+#ignore-comments = "yes"
+#ignore-docstrings = "yes"
+
+# [tool.mypy]
+# strict = true
+
+# [[tool.mypy.overrides]]
+# module = ["GitPython"]
+# ignore_missing_imports = true

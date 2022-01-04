@@ -1,0 +1,10 @@
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+
+# mypy
+.mypy_cache/
+
+# virtualenv
+Pipfile
+Pipfile.lock
