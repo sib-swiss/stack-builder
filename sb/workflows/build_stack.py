@@ -7,8 +7,12 @@ from contextlib import contextmanager
 from typing import Generator
 
 from ..utils.config import load_config, load_package_list, StackBuilderConfig
-from ..utils.easyconfigs import find_easyconfigs
-from ..utils.utils import delete_directory_content, run_subprocess
+from ..utils.easyconfigs import find_easyconfigs, install_license_files
+from ..utils.utils import (
+    delete_directory_content,
+    run_subprocess,
+    user_confirmation_dialog,
+)
 from ..utils.timer import Timer
 from ..utils.git import switch_to_branch_if_repo
 from ..utils.logging import print_summary_start, print_summary_end
@@ -34,17 +38,6 @@ def clean_eb_tmp_files(sb_config: StackBuilderConfig) -> Generator:
     yield None
     clean_eb_tmp_path()
     delete_directory_content(sb_config.buildpath)
-
-
-def delete_stack_confirmation_dialog(path) -> bool:
-    """Displays a user confirmation request asking whether the user is sure to
-    delete the entire software stack.
-    """
-    msg = (
-        f"### WARNING: This will delete the existing EasyBuild stack at: {path}\n"
-        "###          Are you sure you want to proceed [yes/y/no/n]?: "
-    )
-    return input(msg).lower() in ("y", "yes")
 
 
 def build_stack(
@@ -86,12 +79,27 @@ def build_stack(
         print("#" * 100 + "\n")
         return
 
+    if any(x not in easyconfigs_to_build for x in pkgs_to_build):
+        print(
+            "### ERROR: easyconfig files for one or more packages to build "
+            "could not be found. Aborting. \n"
+            "###        Use the '--force' flag to build stack while ignoring "
+            "non-found packages."
+        )
+        return
+
     # If requested, delete the current EasyBuild stack installation.
     if build_from_scratch:
-        if delete_stack_confirmation_dialog(sb_config.installpath):
+        if user_confirmation_dialog(
+            f"This will delete the existing EasyBuild stack at: {sb_config.installpath}"
+        ):
             delete_directory_content(sb_config.installpath, verbose=True)
         else:
             return
+
+    # Verify that license files are present in the host's home directory.
+    if not dry_run:
+        install_license_files(sb_config)
 
     # Run EasyBuild.
     eb_cmd_arguments = ["eb", "--robot", "--rpath"]

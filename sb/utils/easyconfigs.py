@@ -1,10 +1,12 @@
 """Easyconfigs related functions."""
 
 import os
+import filecmp
+import shutil
 from dataclasses import dataclass
 from typing import Generator, Iterable, Sequence, Dict, Tuple, Optional, List
-from .config import StackBuilderConfig
-from .utils import get_files_from_directory
+from .config import StackBuilderConfig, LICENSE_FILES_DIR
+from .utils import get_files_from_directory, create_directory
 from .git import GitRepo, Status, switch_to_branch_if_repo
 
 
@@ -174,3 +176,23 @@ def get_easyconfigs_from_directory(
                     break
 
         return easyconfigs_by_name
+
+
+def install_license_files(sb_config: StackBuilderConfig) -> None:
+    """Copies .lic license files found in the sib-software-stack git repository
+    to the LICENSE_FILES_DIR"""
+
+    # If needed, create the directory where EasyBuild searches for license
+    # files. The function does nothing if the directory already exists.
+    create_directory(LICENSE_FILES_DIR)
+
+    # Copy license files that are not already present in the destination
+    # directory.
+    for license_file in get_files_from_directory(
+        sb_config.sib_software_stack_repo.path, extension=".lic", full_path=True
+    ):
+        license_copy = os.path.join(LICENSE_FILES_DIR, os.path.basename(license_file))
+        if not os.path.isfile(license_copy) or not filecmp.cmp(
+            license_file, license_copy, shallow=True
+        ):
+            shutil.copy2(license_file, license_copy)

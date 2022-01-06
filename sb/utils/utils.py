@@ -5,7 +5,36 @@ import sys
 import shutil
 import subprocess  # nosec
 from pathlib import Path
-from typing import Sequence, Optional, Iterator
+from typing import Sequence, Optional, Iterator, Union
+
+
+def create_directory(
+    dir_paths: Union[str, Sequence[str]], raise_error_if_exists: bool = False
+) -> None:
+    """Recursively create the specified directory(ies) on disk."""
+    if isinstance(dir_paths, str):
+        dir_paths = (dir_paths,)
+
+    for dir_path in dir_paths:
+        # Check whether the directory to create already exists.
+        dir_to_create = Path(os.path.expanduser(dir_path))
+        if dir_to_create.is_dir():
+            if raise_error_if_exists:
+                raise ValueError(
+                    f"Cannot create directory '{dir_to_create}' as it "
+                    "already exists."
+                )
+            continue
+
+        # Recursively create the new dictroy. If a file/symlink with the same
+        # name already exists, an error is raised.
+        try:
+            dir_to_create.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            raise ValueError(
+                f"Cannot create directory '{dir_to_create}'. "
+                "A file/symlink with the same name already exists."
+            ) from None
 
 
 def delete_directory_content(
@@ -78,3 +107,15 @@ def run_subprocess(
         return process.stdout.decode("utf-8").strip()
 
     return None
+
+
+def user_confirmation_dialog(msg: str) -> bool:
+    """Displays a user confirmation dialog requesting the user for
+    confirmation to proceed.
+    """
+    msg = (
+        f"### WARNING: {msg}\n"
+        "###          (warning can be suppressed in the stack-builder config file)\n"
+        "###          Are you sure you want to proceed [yes/y/no/n]?: "
+    )
+    return input(msg).lower() in ("y", "yes")

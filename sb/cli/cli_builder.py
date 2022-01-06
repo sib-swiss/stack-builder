@@ -1,5 +1,6 @@
 """Command line builder module."""
 
+import sys
 import argparse
 from typing import Any, Dict, Sequence, Optional, Callable
 
@@ -111,9 +112,18 @@ class CliWithSubcommands:
 
         # Add subcommands to the command line.
         if self.subcommands:
-            self.subparser_factory = parser.add_subparsers(
-                dest="subcommand", help="subcommand help", required=True
-            )
+
+            # Note: to support python 3.6, remove the required=True argument.
+            #       Can be removed once support for 3.6 is no longer needed.
+            if sys.version_info >= (3, 7):
+                self.subparser_factory = parser.add_subparsers(
+                    dest="subcommand", help="subcommand help", required=True
+                )
+            else:
+                self.subparser_factory = parser.add_subparsers(
+                    dest="subcommand", help="subcommand help"
+                )
+
             for subcommand in self.subcommands:
                 self.add_subcommand(subcommand)
 

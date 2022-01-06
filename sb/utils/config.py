@@ -7,20 +7,22 @@ from typing import Optional, Union, Sequence, List, Tuple, Iterator, Dict, Any
 
 from .git import GitRepo
 
+EB_CONFIG_FILE = "config.cfg"
+SB_CONFIG_FILE = "config_stackbuilder.cfg"
+EB_DEFAULT_CONFIG_DIR = Path.home().joinpath(".config", "easybuild").as_posix()
 SIB_EASYCONFIGS_REPO = "sib-easyconfigs.git"
 SIB_SOFTWARE_STACK_REPO = "sib-software-stack.git"
 EASYCONFIGS_LIST_FILE = "sib_stack_package_list.txt"
-EB_CONFIG_FILE = "config_easybuild.cfg"
 SIB_EASYCONFIGS_MAIN_BRANCH = "develop"
 SIB_SOFT_STACK_MAIN_BRANCH = "main"
-# SB_CONFIG_FILE = "config_stackbuilder.cfg"
+LICENSE_FILES_DIR = Path.home().joinpath("licenses").as_posix()
 
 
 # List of easyconfigs for which a "-noAVX2.eb"
 NO_AVX2_PACKAGES = [
     "FFTW-3.3.9-gompi-2021a.eb",
     "RDKit-2021.03.4-foss-2021a.eb",
-    "OpenBabel-3.1.1-gompi-2021a-Python-3.9.5.eb",
+    "OpenBabel-3.1.1-gompi-2021a.eb",
 ]
 
 
@@ -56,31 +58,51 @@ class StackBuilderConfig:
         installpath: str,
         robot_paths: Sequence[str],
         sib_node: SIBNode,
+        other_nodes: Optional[Sequence[SIBNode]] = None,
+        sib_easyconfigs_repo: Optional[str] = None,
+        sib_software_stack_repo: Optional[str] = None,
+        optional_software: Optional[Sequence[SIBNode]] = None,
         optarch: Optional[str] = None,
         job_cores: Union[int, str] = 0,
+        confirm_hard_reset: bool = True,
     ) -> None:
 
-        # Required properties.
+        # Required EasyBuild properties.
         self.buildpath = os.path.expanduser(buildpath)
         self.sourcepath = os.path.expanduser(sourcepath)
         self.installpath = os.path.expanduser(installpath)
         self.robot_paths = [os.path.expanduser(x) for x in robot_paths]
 
-        # Optional properties.
-        self.optarch = optarch
-        self.job_cores = int(job_cores)
-
-        # SIB software stack properties.
-        self.sib_node = sib_node or get_local_node()
+        # Required stack-builder properties.
+        self.sib_node = sib_node
         self.sib_easyconfigs_repo = GitRepo(
-            self._dir_from_robotpath(SIB_EASYCONFIGS_REPO),
+            path=sib_easyconfigs_repo or self._dir_from_robotpath(SIB_EASYCONFIGS_REPO),
             main_branch_name=SIB_EASYCONFIGS_MAIN_BRANCH,
             main_remote_name="origin",
         )
         self.sib_software_stack_repo = GitRepo(
-            self._dir_from_robotpath(SIB_SOFTWARE_STACK_REPO),
+            path=sib_software_stack_repo
+            or self._dir_from_robotpath(SIB_SOFTWARE_STACK_REPO),
             main_branch_name=SIB_SOFT_STACK_MAIN_BRANCH,
             main_remote_name="origin",
+        )
+        self.confirm_hard_reset = confirm_hard_reset
+
+        # Optional EasyBuild properties.
+        self.optarch = optarch
+        self.job_cores = int(job_cores)
+
+        # Optional stack-builder properties.
+        self.other_nodes = tuple(
+            x
+            for x in (other_nodes if other_nodes else tuple(SIBNode))
+            if x != self.sib_node
+        )
+
+        self.optional_software = (self.sib_node,) + tuple(
+            x
+            for x in (optional_software if optional_software else ())
+            if x != self.sib_node
         )
 
         self.__post_init__()
@@ -168,20 +190,17 @@ class StackBuilderConfig:
         return repo_path
 
 
-def get_local_node() -> SIBNode:
-    """Searches environment variables for SIB_SOFTWARE_STACK_NODE. If the
-    variable exists, its value is returned. If it is missing, an error is
-    raised.
+def str_to_node(node_name: str) -> SIBNode:
+    """Returns the SIBNode object corresponding to a the given node name or
+    one if its synonyms.
     """
-    environment_value = "SIB_SOFTWARE_STACK_NODE"
-    node_name = os.environ.get(environment_value)
     for node, synonyms in SIB_NODE_SYNONYMS.items():
         if node_name in synonyms:
             return node
 
     raise ValueError(
-        "Unable to determine local node name. Please make sure that the "
-        f"shell environment value '{environment_value}' is set. "
+        f"Unable to determine the node value: the node name '{node_name}' "
+        "does not match any accepted node name or one if its synonyms. "
         "Accepted values are: "
         + "; ".join(
             [
@@ -193,19 +212,19 @@ def get_local_node() -> SIBNode:
     )
 
 
-def load_config(sib_node: Optional[SIBNode] = None) -> StackBuilderConfig:
-    """Load an EasyBuild configuration file from disk and return the values
-    as a StackBuilderConfig object.
-    """
+def config_values_from_file(
+    config_file_path: str, args_required: Sequence[str], args_optional: Sequence[str]
+) -> Dict[str, Any]:
+    """Load arguments from the specified config file."""
 
-    # Retrieve the path to the EasyBuild config file.
-    config_file_path = get_eb_config_file()
-
-    args_required = ("buildpath", "sourcepath", "robot_paths", "installpath")
-    args_optional = ("job_cores", "optarch")
+    # "sequence_args" are arguments that are lists/sequences of one or more
+    # values delimited by ":" characters.
     args_captured: Dict[str, Any] = {}
+    sequence_args = ("robot_paths", "other_nodes", "optional_software")
+    boolean_args = ("confirm_hard_reset",)
 
-    # Load arguments from EasyBuild config file.
+    # Read through the config file, load required and optional arguments, and
+    # ignore comment lines.
     with open(os.path.expanduser(config_file_path), mode="r", encoding="utf8") as f:
         for line in f:
             line = line.strip()
@@ -214,60 +233,187 @@ def load_config(sib_node: Optional[SIBNode] = None) -> StackBuilderConfig:
 
             argument, value = map(str.strip, line.split(" = "))
             argument = argument.replace("-", "_")
+            value = value.replace('"', "")
             if argument in args_required or argument in args_optional:
-                args_captured[argument] = (
-                    value.split(":") if argument == "robot_paths" else value
-                )
+                if argument in sequence_args:
+                    args_captured[argument] = value.split(":")
+                elif argument in boolean_args:
+                    value = value.capitalize()
+                    if value == "True":
+                        args_captured[argument] = True
+                    elif value == "False":
+                        args_captured[argument] = False
+                    else:
+                        raise ValueError(
+                            "Bad argument value detected in "
+                            f"config file: {config_file_path}\n"
+                            f" -> argument '{argument}' must be either "
+                            "'True' or 'False'."
+                        )
+                else:
+                    args_captured[argument] = value
 
+    # If a required value is missing, raise an error.
     missing_args = set(args_required) - set(args_captured.keys())
     if missing_args:
         raise ValueError(
-            "One or more required values are missing from the EasyBuild "
-            f"config file [{config_file_path}]: {', '.join(missing_args)}."
+            "One or more required values are missing from the config file "
+            f"[{config_file_path}]: {', '.join(missing_args)}."
         )
 
-    # If specified, add the sib_node value to the list of arguments that will
-    # be passed to create the config object. Otherwise, try to retrieve it
-    # from an environment variable.
-    args_captured["sib_node"] = sib_node if sib_node else get_local_node()
+    return args_captured
 
+
+def load_config() -> StackBuilderConfig:
+    """Load an EasyBuild configuration file from disk and return the values
+    as a StackBuilderConfig object.
+    """
+
+    # Load values from the EasyBuild config file.
+    eb_config_file = get_eb_config_file()
+    args_captured = config_values_from_file(
+        config_file_path=eb_config_file,
+        args_required=("buildpath", "sourcepath", "robot_paths", "installpath"),
+        args_optional=("job_cores", "optarch"),
+    )
+
+    # Load values from the stack-builder config file.
+    sb_config_file = get_sb_config_file()
+    args_captured.update(
+        config_values_from_file(
+            config_file_path=sb_config_file,
+            args_required=(
+                "sib_easyconfigs_repo",
+                "sib_software_stack_repo",
+                "sib_node",
+                "confirm_hard_reset",
+            ),
+            args_optional=("other_nodes", "optional_software"),
+        )
+    )
+
+    # Convert SIB node strings into SIBNode objects.
+    args_captured["sib_node"] = str_to_node(args_captured["sib_node"])
+    for arg_name in ("other_nodes", "optional_software"):
+        if arg_name in args_captured:
+            args_captured[arg_name] = list(map(str_to_node, args_captured[arg_name]))
+
+    # Verify that all path values given in the config files exist on disk.
+    # Note: the code is a bit tedious because we want to specify the name of
+    # config file and the name of the argument when a path is missing.
+    paths_to_check = [
+        (args_captured[x], x, eb_config_file)
+        for x in ("buildpath", "sourcepath", "installpath")
+    ]
+    paths_to_check.extend(
+        (x, "robot_paths", eb_config_file) for x in args_captured["robot_paths"]
+    )
+    paths_to_check.extend(
+        (args_captured[x], x, sb_config_file)
+        for x in ("sib_easyconfigs_repo", "sib_software_stack_repo")
+    )
+
+    robot_paths = []
+    for path, arg_name, config_file in paths_to_check:
+        # Update path argument with expanded user home directory.
+        path = os.path.expanduser(path)
+        if arg_name == "robot_paths":
+            robot_paths.append(path)
+        else:
+            args_captured[arg_name] = path
+
+        if not os.path.isdir(path):
+            raise ValueError(
+                f"Config file error [{config_file}]: unable to find directory"
+                f"specified for argument '{arg_name}' [{path}]."
+            )
+
+    # Update path values with expanded user home directory for robot-path.
+    args_captured["robot_paths"] = robot_paths
     return StackBuilderConfig(**args_captured)
 
 
-def get_eb_config_file() -> str:
-    """Search for an EasyBuild config file in different locations and return
-    the path to the file if found.
+def config_file_from_environment_variable(environment_var_name: str) -> Optional[str]:
+    """Test whether the specified shell environment variable exists and:
+    * if True, further test whether it points to an existing file, and if so,
+      return that file. Raises an error otherwise.
+    * if False, returns None.
     """
-
-    # Try to retrieve the config file form the EASYBUILD_CONFIGFILES
-    # environment variable.
-    environment_var_name = "EASYBUILD_CONFIGFILES"
     if environment_var_name in os.environ:
         config_file = Path(os.path.expanduser(os.environ[environment_var_name]))
         if config_file.is_file():
             return config_file.as_posix()
 
         raise ValueError(
-            "Error loading EasyBuild config file: the file defined in the "
+            "Error loading config file: the file defined in the "
             f"[{environment_var_name}] environment variable is missing or "
             f"cannot be accessed: {config_file}"
         )
 
-    # Try to retrieve the config file from the default EasyBuild location or
-    # from the same directory as the script.
-    paths_to_test = (
-        Path.home().joinpath(".config", "easybuild"),
-        Path(os.path.realpath(__file__)).parent,
+    return None
+
+
+def get_eb_config_file() -> str:
+    """Search for an EasyBuild config file in different locations and return
+    the path to the file if found.
+    The following locations are searched:
+     * EASYBUILD_CONFIGFILES environment variable.
+     * ~/.config/easybuild (the default easybuild location for config files).
+    """
+
+    # Try to retrieve the config file form the EASYBUILD_CONFIGFILES
+    # environment variable.
+    environment_var_name = "EASYBUILD_CONFIGFILES"
+    config_file = config_file_from_environment_variable(environment_var_name)
+    if config_file:
+        return config_file
+
+    # Try to retrieve the config file from the default EasyBuild location.
+    config_file = os.path.join(EB_DEFAULT_CONFIG_DIR, EB_CONFIG_FILE)
+    if os.path.isfile(config_file):
+        return config_file
+
+    raise ValueError(
+        "Error loading the EasyBuild config file: cannot find config file. "
+        "The following locations where searched: \n"
+        f" * Environment variable: {environment_var_name}\n"
+        f" * File: {config_file}"
     )
-    for config_file in (x.joinpath(EB_CONFIG_FILE) for x in paths_to_test):
-        if config_file.is_file():
-            return config_file.as_posix()
+
+
+def get_sb_config_file() -> str:
+    """Search for a stack-builder config file in different locations and return
+    the path to the file if found.
+    The following locations are searched:
+     * STACKBUILDER_CONFIGFILES environment variable.
+     * EASYBUILD_CONFIGFILES environment variable.
+     * ~/.config/easybuild (the default easybuild location for config files).
+    """
+    # Try to retrieve the config file form the STACKBUILDER_CONFIGFILES
+    # environment variable.
+    environment_var_name = "STACKBUILDER_CONFIGFILES"
+    config_file = config_file_from_environment_variable(environment_var_name)
+    if config_file:
+        return config_file
+
+    # Try to retrieve the config file from the default EasyBuild location or
+    # from the locations specified in the EASYBUILD_CONFIGFILES environment
+    # variable.
+    env_var_path = config_file_from_environment_variable("EASYBUILD_CONFIGFILES")
+    config_files = [
+        os.path.join(x, SB_CONFIG_FILE)
+        for x in ([os.path.dirname(env_var_path)] if env_var_path else [])
+        + [EB_DEFAULT_CONFIG_DIR]
+    ]
+    for config_file in (os.path.expanduser(x) for x in config_files):
+        if os.path.isfile(config_file):
+            return config_file
 
     raise ValueError(
         "Error loading EasyBuild config file: cannot find config file. "
         "The following locations where searched: \n"
-        f" * Environment variable: {environment_var_name}.\n"
-        f" * Directories: {paths_to_test}."
+        f" * Environment variable: {environment_var_name}\n"
+        f" * File(s): {config_files}"
     )
 
 

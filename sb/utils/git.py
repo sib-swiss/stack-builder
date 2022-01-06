@@ -1,7 +1,9 @@
 """Module for Git related functions."""
 
 import os
-from contextlib import contextmanager, nullcontext
+import sys
+import contextlib
+from contextlib import contextmanager
 from typing import (
     ContextManager,
     Iterable,
@@ -76,6 +78,11 @@ class GitRepo(git.Repo):
     def path(self) -> str:
         """Root directory of the Git repo (working tree directory)."""
         return str(self.working_dir)
+
+    @property
+    def name(self) -> str:
+        """Name of git repo."""
+        return os.path.basename(self.path)
 
     @property
     def branch_names(self) -> Tuple[str, ...]:
@@ -171,20 +178,10 @@ class GitRepo(git.Repo):
             return Status.BEHIND
         return Status.DIVERGED
 
-    def branch_status_deprecated(self) -> Status:
-        """Runs a "git status" command on the repo and returns whether the
-        current branch is up-to-date.
-        """
-        status_msg = self.git.status()
-        if "branch is up to date" in status_msg:
-            return Status.UP_TO_DATE
-        if "branch is behind" in status_msg and "can be fast-forwarded" in status_msg:
-            return Status.BEHIND
-        if "branch is ahead" in status_msg:
-            return Status.AHEAD
-        if "have diverged" in status_msg:
-            return Status.DIVERGED
-        return Status.NO_UPSTREAM
+    def fetch_updates(self) -> None:
+        """Fetch updates from all remotes associated to the repo."""
+        for remote in self.remotes:
+            remote.fetch()
 
     def switch(self, branch_name: str) -> None:
         """Switch/checkout to the specified branch."""
@@ -199,7 +196,7 @@ class GitRepo(git.Repo):
             branch.checkout()
         except GitRepoError as e:
             # Error case 1: the branch does not exist in the current repo.
-            raise GitRepoError(f"{e} Cannot switch to {branch_name}.") from None
+            raise GitRepoError(f"{e} Cannot switch to '{branch_name}'.") from None
         except git.GitCommandError as e:
             # Error case 2: cannot switch branches because repo is not clean.
             raise GitRepoError(
@@ -265,8 +262,8 @@ class GitRepo(git.Repo):
         self,
         branch_name: str,
         with_fetch: bool = True,
-        remote: Optional[git.Remote] = None,
-        raise_error_on_missing_upstream: bool = False,
+        error_on_missing_upstream: bool = True,
+        error_on_diverged: bool = True,
     ) -> None:
         """Perform a git pull (fetch + merge) on the specified branch. The pull
         opperation is only performed if the merge with the upstream branch is
@@ -276,47 +273,58 @@ class GitRepo(git.Repo):
         :param repo: git repository to update.
         :param with_fetch: if True, a git fetch is performed before checking
             whether the branch is up-to-date and can be fast-forward merged.
-        :param remote: remote from which to fetch changes.
-        :param raise_error_on_missing_upstream: if True, an error is raised in
-            the case where a branch has no upstream tracking branch on the
-            remote. If False, no pull is made and no error is raised.
+        :param error_on_missing_upstream: if True, an error is raised in the
+            case where a branch has no upstream tracking branch on the remote.
+            If False, no pull is made and no error is raised.
+        :param error_on_diverged: if True, an error is raised if the local and
+            upstream branches have diverged, i.e. no fast-forward pull is
+            possible.
         :raises GitRepoError:
         """
         # Get the status of the branch to push, e.g. is it ahead or behind its
         # remote tracking branch.
-        remote = remote if remote else self.default_remote
         if with_fetch:
-            remote.fetch()
+            self.fetch_updates()
         status = self.branch_status(branch_name)
 
-        # If the local branch in behind its remote tracking branch, perform
-        # a git pull.
-        if status in (Status.UP_TO_DATE, Status.AHEAD):
-            pass
-        elif status is Status.BEHIND:
-            if self.active_branch.name == branch_name:
-                refspec = branch_name
-                info = remote.pull(refspec=refspec)[0]
+        # If the local branch is behind its remote tracking branch, perform
+        # a git pull. Nothing to do if status is UP_TO_DATE or AHEAD.
+        if status is Status.BEHIND:
+            # Get the remote associated to the branch's upstream.
+            branch = self.branch(branch_name)
+            remote_branch = cast(git.RemoteReference, branch.tracking_branch())
+            remote = self.remote(remote_branch.remote_name)
+            if self.active_branch == branch:
+                # Case 1: the branch to update is the current branch.
+                info = remote.pull(refspec=branch_name)[0]
+                if info.flags != 0 or branch.commit != remote_branch.commit:
+                    raise GitRepoError(
+                        f"Git command failed: git pull {remote.name} {branch_name}",
+                        repo=self,
+                    )
             else:
+                # Case 2: the branch to update is not the current branch.
                 refspec = f"{branch_name}:{branch_name}"
                 info = remote.fetch(refspec=refspec)[0]
-            if info.flags != 0:
-                raise GitRepoError(
-                    f"Git command failed: "
-                    f"git {'pull' if refspec == branch_name else 'fetch'} "
-                    f"{remote.name} {refspec}",
-                    repo=self,
-                )
-        elif status is Status.DIVERGED:
+                if (
+                    info.flags != info.FAST_FORWARD
+                    or branch.commit != remote_branch.commit
+                ):
+                    raise GitRepoError(
+                        f"Git command failed: git fetch {remote.name} {refspec}",
+                        repo=self,
+                    )
+        elif status is Status.DIVERGED and error_on_diverged:
             raise GitRepoError(
-                f"Cannot pull branch '{branch_name}' because it has diverged "
-                "from its upstream. Please resolve manually.",
+                f"Cannot auto-update (pull) branch '{branch_name}' because it "
+                "has diverged from its upstream. Please resolve the issue "
+                "manually.",
                 repo=self,
             )
-        elif status is Status.NO_UPSTREAM and raise_error_on_missing_upstream:
+        elif status is Status.NO_UPSTREAM and error_on_missing_upstream:
             raise GitRepoError(
-                f"Cannot pull branch '{branch_name}' because it has no "
-                f"upstream on remote '{remote.name}'. Please resolve manually.",
+                f"Cannot auto-update (pull) branch '{branch_name}' because it "
+                f"has no upstream. Please resolve the issue manually.",
                 repo=self,
             )
 
@@ -332,11 +340,21 @@ class GitRepo(git.Repo):
         """
         # Get the status of the branch to push, e.g. is it ahead or behind its
         # remote tracking branch.
-        remote = remote if remote else self.default_remote
         if with_fetch:
-            remote.fetch()
+            self.fetch_updates()
         status = self.branch_status(branch_name)
         cmd_with_error = ""
+
+        # If not remote is set, get the remote associated to the upstream
+        # branch or the repo's default remote.
+        if not remote:
+            if status is Status.NO_UPSTREAM:
+                remote = self.default_remote
+            else:
+                # Get the remote associated to the branch's upstream.
+                branch = self.branch(branch_name)
+                remote_branch = cast(git.RemoteReference, branch.tracking_branch())
+                remote = self.remote(remote_branch.remote_name)
 
         # Perform git push with the appropriate options depending on the
         # branche's status.
@@ -370,10 +388,20 @@ class GitRepo(git.Repo):
                 repo=self,
             )
 
-    def new_branch(self, name: str, raise_error_if_exists: bool = False) -> None:
+    def new_branch(
+        self, name: str, root_commit: str = "HEAD", raise_error_if_exists: bool = False
+    ) -> None:
         """Create a new branch with the specified name. If a branch with that
         name already exists on the default remote, the new branch is created
         from the remote branch and the remote branch is used set as upstream.
+
+        :param name: name of branch to create.
+        :param root_commit: commit where the new branch should be
+            created/rooted. By defaults new branches are created at the current
+            position of HEAD.
+        :param raise_error_if_exists: if True, and error is raised when
+            attempting to create a new branch that already exists. If False,
+            no action is taken if the branch already exists.
         """
         # If the branch already exists, do nothing or raise an error if the
         # user asked for it.
@@ -386,17 +414,18 @@ class GitRepo(git.Repo):
             return
 
         # Create a new local branch.
-        new_branch = self.create_head(name)
+        new_branch = self.create_head(name, commit=root_commit)
 
-        # If a remote branch with the same name exists, set the local
-        # branch to track that remote branch.
-        remote = self.default_remote
-        remote.fetch()
-        if f"{remote.name}/{name}" in self.remote_branch_names:
-            new_branch.commit = f"{remote.name}/{name}"
-            new_branch.set_tracking_branch(
-                remote_reference=self.remote_branch(name, remote)
-            )
+        # If a remote branch with the same name exists, set the local branch
+        # to track that remote branch.
+        for remote in self.remotes:
+            remote.fetch()
+            if f"{remote.name}/{name}" in self.remote_branch_names:
+                new_branch.commit = f"{remote.name}/{name}"
+                new_branch.set_tracking_branch(
+                    remote_reference=self.remote_branch(name, remote)
+                )
+                return
         return
 
     def reset_hard_to_upstream(
@@ -404,22 +433,55 @@ class GitRepo(git.Repo):
         branch_name: str,
         with_fetch: bool = True,
     ) -> None:
-        """Performs a 'reset --hard origin/branch_name' on the specified branch."""
+        """Reset the specified branch to the position of its upstream branch.
+
+        If the branch to reset is the currently active branch, the index and
+        working tree are also reset. In this sense, this is similar to a
+        'reset --hard origin/branch_name' on the specified branch.
+
+        If the branch has no upstream, an error is raised.
+        """
+        # Fetch updates from the remote.
         if with_fetch:
-            self.default_remote.fetch()
-        with self.switch_to_branch(branch_name, revert_on_exit=True):
-            self.git.reset("--hard", f"{self.default_remote.name}/{branch_name}")
+            self.fetch_updates()
+
+        # Set the branch's reference (pointer) to the upstream's reference.
+        branch = self.branch(branch_name)
+        remote_branch = branch.tracking_branch()
+        if not remote_branch:
+            raise GitRepoError(
+                f"Cannot reset branch '{branch_name}' to upstream as the "
+                "branch has no upstream.",
+                repo=self,
+            )
+
+        # Reset branch to the its upstream branch.
+        if self.active_branch == branch:
+            # If the branch to reset is the current branch, the index and the
+            # working tree must also be updated so that they match the
+            # upstream.
+            if self.is_dirty():
+                raise GitRepoError(
+                    f"Cannot reset branch {branch_name} as it is the "
+                    "currently active branch and the repo contains "
+                    "uncommitted changes (working tree not clean).",
+                    repo=self,
+                )
+            self.head.reset(commit=remote_branch.commit, index=True, working_tree=True)
+        else:
+            # If the branch to update is not checked-out, it is sufficient to
+            # set the branch reference to the latest commit of the upstream.
+            branch.commit = remote_branch.commit
 
     def rebase_branch(
         self,
         branch_name: str,
         rebase_location: str,
         with_fetch: bool = True,
-        remote: Optional[git.Remote] = None,
     ) -> None:
         """Rebase the specified branch on the specified rebase_location."""
         if with_fetch:
-            _ = remote.fetch() if remote else self.default_remote.fetch()
+            self.fetch_updates()
 
         with self.switch_to_branch(branch_name):
             try:
@@ -430,6 +492,24 @@ class GitRepo(git.Repo):
                     f"Unable to automatically rebase {branch_name} on "
                     f"{rebase_location} because of merge conflicts. "
                     "Please rebase manually.",
+                    repo=self,
+                ) from e
+
+    def merge_branch(
+        self,
+        branch_name: str,
+        branch_to_merge: str,
+    ) -> None:
+        """Merges branch "branch_to_merge" into the specified branch."""
+        with self.switch_to_branch(branch_name):
+            try:
+                self.git.merge(branch_to_merge)
+            except git.GitCommandError as e:
+                self.git.merge("--abort")
+                raise GitRepoError(
+                    f"Unable to automatically merge {branch_to_merge} into "
+                    f"{branch_name} because of merge conflicts. "
+                    "Please merge manually.",
                     repo=self,
                 ) from e
 
@@ -457,4 +537,9 @@ def switch_to_branch_if_repo(
         return repo.switch_to_branch(branch, revert_on_exit=True)
     if repo and not branch:
         raise ValueError("Either both or neither 'repo' and 'branch' should be 'None'.")
-    return nullcontext()
+
+    # Note: to support python 3.6, return contextlib.suppress().
+    #       This can be removed once support for 3.6 is no longer needed.
+    if sys.version_info >= (3, 7):
+        return contextlib.nullcontext()
+    return contextlib.suppress()
