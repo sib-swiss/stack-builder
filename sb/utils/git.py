@@ -428,7 +428,34 @@ class GitRepo(git.Repo):
                 return
         return
 
-    def reset_hard_to_upstream(
+    def reset_branch(self, branch: git.Head, ref_to_reset_to: str) -> None:
+        """Reset the specified branch to the specified reference, for instance
+        a commit or another branch.
+
+        :param branch: branch to reset (as a Head object).
+        :param ref_to_reset_to: reference, e.g. a commit or the name of another
+            branch, to which the branch should be reset to.
+        :raises GitRepoError:
+        """
+        if self.active_branch == branch:
+            # If the branch to reset is the current branch, the index and the
+            # working tree must also be updated so that they match the
+            # specified reference.
+            if self.is_dirty():
+                raise GitRepoError(
+                    f"Cannot reset branch '{branch.name}' to "
+                    f"'{ref_to_reset_to}' as it is the currently active "
+                    "branch and the repo contains uncommitted changes "
+                    "(working tree not clean).",
+                    repo=self,
+                )
+            self.head.reset(commit=ref_to_reset_to, index=True, working_tree=True)
+        else:
+            # If the branch to update is not checked-out, it is sufficient to
+            # set the branch's reference to the specified reference.
+            branch.commit = ref_to_reset_to
+
+    def reset_branch_to_upstream(
         self,
         branch_name: str,
         with_fetch: bool = True,
@@ -456,22 +483,7 @@ class GitRepo(git.Repo):
             )
 
         # Reset branch to the its upstream branch.
-        if self.active_branch == branch:
-            # If the branch to reset is the current branch, the index and the
-            # working tree must also be updated so that they match the
-            # upstream.
-            if self.is_dirty():
-                raise GitRepoError(
-                    f"Cannot reset branch {branch_name} as it is the "
-                    "currently active branch and the repo contains "
-                    "uncommitted changes (working tree not clean).",
-                    repo=self,
-                )
-            self.head.reset(commit=remote_branch.commit, index=True, working_tree=True)
-        else:
-            # If the branch to update is not checked-out, it is sufficient to
-            # set the branch reference to the latest commit of the upstream.
-            branch.commit = remote_branch.commit
+        self.reset_branch(branch=branch, ref_to_reset_to=remote_branch.commit)
 
     def rebase_branch(
         self,
@@ -501,17 +513,37 @@ class GitRepo(git.Repo):
         branch_to_merge: str,
     ) -> None:
         """Merges branch "branch_to_merge" into the specified branch."""
+
+        # If the branch to merge into is exactly behind the branch to merge,
+        # a fast-forward merge is possible (provided that the working tree is
+        # clean or that the branch to merge into is not the currently active
+        # branch. Such a fast-forward merge is the same as a hard-reset.
+        status = self.branch_status(branch_name, branch_to_merge)
+        if status is Status.BEHIND:
+            try:
+                self.reset_branch(
+                    branch=self.branch(branch_name), ref_to_reset_to=branch_to_merge
+                )
+                return
+            except GitRepoError:
+                # If the branch to merge into is the currently active branch
+                # and the repository is dirty, a error is raised.
+                pass
+
+        # If the above fast-forward merge is not possible, fall-back onto the
+        # standard "git merge" command.
         with self.switch_to_branch(branch_name):
             try:
                 self.git.merge(branch_to_merge)
             except git.GitCommandError as e:
                 self.git.merge("--abort")
                 raise GitRepoError(
-                    f"Unable to automatically merge {branch_to_merge} into "
-                    f"{branch_name} because of merge conflicts. "
+                    f"Unable to automatically merge branch '{branch_to_merge}' "
+                    f"into branch '{branch_name}' because of merge conflicts. "
                     "Please merge manually.",
                     repo=self,
                 ) from e
+        return
 
     def grep_history(self, search_term: str, branch_name: str) -> str:
         """Search for the specified pattern on the specified branch, but only in

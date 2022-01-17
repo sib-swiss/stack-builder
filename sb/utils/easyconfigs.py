@@ -40,7 +40,6 @@ def branch_is_ahead_of_others(
 ) -> bool:
     """Tests whether the specied branch is ahead (in terms of commits) of all
     other specified branches. Returns True if it is the case, False otherwise.
-    In other w
     """
     return not any(
         map(

@@ -1,7 +1,12 @@
 """Functions and classes of the "update repo" workflow."""
 
-from ..utils.git import GitRepo, GitRepoError, Status
-from ..utils.config import StackBuilderConfig, load_config
+from ..utils.git import GitRepo, Status
+from ..utils.config import (
+    StackBuilderConfig,
+    load_config,
+    EB_OFFICIAL_REPO,
+    EB_OFFICIAL_REPO_NAME,
+)
 from ..utils.utils import user_confirmation_dialog
 
 
@@ -83,7 +88,75 @@ def update_local_repo(repo: GitRepo, sb_config: StackBuilderConfig) -> None:
                 f"any local changes to branch '{branch}' will be lost!"
             ):
                 print(f"###  -> resetting local branch '{branch}' to its upstream.")
-                repo.reset_hard_to_upstream(branch_name=branch, with_fetch=False)
+                repo.reset_branch_to_upstream(branch_name=branch, with_fetch=False)
+
+
+def update_from_easybuild_upstream(sb_config: StackBuilderConfig) -> None:
+    """Update the "develop" and "main" branches from the SIB remote and local
+    copy of the repo with updates from the official EasyBuild GitHub
+    repository.
+    """
+
+    # If needed, add the official EasyBuild upstream GitHub repo as a remote
+    # to the local sib-easyconfigs repo.
+    repo = sb_config.sib_easyconfigs_repo
+    try:
+        eb_remote = repo.remote(EB_OFFICIAL_REPO_NAME)
+    except ValueError:
+        eb_remote = repo.create_remote(EB_OFFICIAL_REPO_NAME, EB_OFFICIAL_REPO)
+        # To delete a remote: repo.delete_remote(eb_remote)
+
+    assert eb_remote.exists()
+
+    # Get updates for both the SIB and official EasyBuild remotes.
+    repo.fetch_updates()
+
+    # Update the local repo and the SIB remote from the official EasyBuild
+    # remote.
+    # Note: if the status of the branch to update is already UP_TO_DATE there
+    # is nothing to do.
+    for branch_name in (repo.main_branch_name, "main"):
+        sib_branch = f"{repo.default_remote.name}/{branch_name}"
+        eb_branch = f"{eb_remote.name}/{branch_name}"
+        status = repo.branch_status(
+            branch_name=sib_branch, branch_to_compare_with=eb_branch
+        )
+
+        if status is Status.UP_TO_DATE:
+            print(f"###  -> branch '{branch_name}' is up-to-date, nothing to do.")
+
+        elif status is Status.BEHIND:
+            print(f"###  -> updating branch '{branch_name}'.")
+
+            # Make sure the local copy of branch "develop"/"main" is up-to-date
+            # with the latest version on the SIB remote.
+            # This will raise an error if the branches have diverged.
+            if branch_name in repo.branch_names:
+                if repo.branch_status(branch_name=branch_name) is not Status.UP_TO_DATE:
+                    repo.pull_branch(branch_name, with_fetch=True)
+                delete_branch_upon_completion = False
+            else:
+                repo.new_branch(branch_name)
+                delete_branch_upon_completion = True
+
+            # Merge the updates available from the official EasyBuild repo into
+            # the local "develop" branch.
+            try:
+                repo.merge_branch(branch_name, branch_to_merge=eb_branch)
+                print(f"###  -> pushing changes to '{sib_branch}'.")
+                repo.push_branch(branch_name, allow_force=False)
+            finally:
+                if delete_branch_upon_completion:
+                    _ = repo.git.branch("-d", branch_name)
+
+        elif status in (Status.DIVERGED, status is Status.AHEAD):
+            (url_sib_repo,) = repo.default_remote.urls
+            raise ValueError(
+                f"Branch '{sib_branch}' from [{url_sib_repo}] should never "
+                f"{'diverge' if status is Status.DIVERGED else 'be ahead'} "
+                f"of branch '{eb_branch}' from [{EB_OFFICIAL_REPO}]. "
+                "Please resolve this issue manually."
+            )
 
 
 def update_repos() -> None:
@@ -92,8 +165,16 @@ def update_repos() -> None:
     # Load the EasyBuild and StackBuilder configuration values.
     sb_config = load_config()
 
+    # Get updates from the official EasyBuild upstream repo.
+    print(
+        f"### Updating repo {sb_config.sib_easyconfigs_repo.name} "
+        f"from {EB_OFFICIAL_REPO}:"
+    )
+    update_from_easybuild_upstream(sb_config=sb_config)
+    print("### ")
+
     # Update the SIB Git repos.
     for repo in (sb_config.sib_easyconfigs_repo, sb_config.sib_software_stack_repo):
-        print(f"### Updating git repo {repo.name}:")
+        print(f"### Updating repo {repo.name}:")
         update_local_repo(repo=repo, sb_config=sb_config)
         print("### ")

@@ -17,7 +17,8 @@ EASYCONFIGS_LIST_FILE_OVERRIDE = "package_list.txt"
 SIB_EASYCONFIGS_MAIN_BRANCH = "develop"
 SIB_SOFT_STACK_MAIN_BRANCH = "main"
 LICENSE_FILES_DIR = Path.home().joinpath("licenses").as_posix()
-
+EB_OFFICIAL_REPO = "https://github.com/easybuilders/easybuild-easyconfigs"
+EB_OFFICIAL_REPO_NAME = "eb-source"
 
 # List of easyconfigs for which a "-noAVX2.eb"
 NO_AVX2_PACKAGES = [
