@@ -13,6 +13,7 @@ EB_DEFAULT_CONFIG_DIR = Path.home().joinpath(".config", "easybuild").as_posix()
 SIB_EASYCONFIGS_REPO = "sib-easyconfigs.git"
 SIB_SOFTWARE_STACK_REPO = "sib-software-stack.git"
 EASYCONFIGS_LIST_FILE = "sib_stack_package_list.txt"
+EASYCONFIGS_LIST_FILE_OVERRIDE = "package_list.txt"
 SIB_EASYCONFIGS_MAIN_BRANCH = "develop"
 SIB_SOFT_STACK_MAIN_BRANCH = "main"
 LICENSE_FILES_DIR = Path.home().joinpath("licenses").as_posix()
@@ -133,11 +134,10 @@ class StackBuilderConfig:
         """Returns the path to the file containing the list of software
         packages to build on the current node.
         """
-        file_path = Path(self.sib_software_stack_repo.path).joinpath(
-            EASYCONFIGS_LIST_FILE
-        )
-        if file_path.is_file():
-            return file_path.as_posix()
+        for file_name in (EASYCONFIGS_LIST_FILE_OVERRIDE, EASYCONFIGS_LIST_FILE):
+            file_path = Path(self.sib_software_stack_repo.path).joinpath(file_name)
+            if file_path.is_file():
+                return file_path.as_posix()
 
         raise ValueError(
             f"Error: unable to find file '{EASYCONFIGS_LIST_FILE}' in directory "

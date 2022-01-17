@@ -34,7 +34,7 @@ class GitRepoError(Exception):
 
     def __init__(self, msg: Optional[str] = None, repo: Optional["GitRepo"] = None):
         super().__init__(
-            (f"Error in Git repository {repo.path}. " if repo else "")
+            (f"Error in Git repository [{repo.path}]. " if repo else "")
             + (msg if msg else "Unspecified error message.")
         )
 
