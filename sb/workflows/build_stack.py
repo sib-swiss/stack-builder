@@ -6,7 +6,12 @@ import shutil
 from contextlib import contextmanager
 from typing import Generator
 
-from ..utils.config import load_config, load_package_list, StackBuilderConfig
+from ..utils.config import (
+    UserAnswer,
+    load_config,
+    load_package_list,
+    StackBuilderConfig,
+)
 from ..utils.easyconfigs import find_easyconfigs, install_license_files
 from ..utils.utils import (
     delete_directory_content,
@@ -90,8 +95,13 @@ def build_stack(
 
     # If requested, delete the current EasyBuild stack installation.
     if build_from_scratch:
-        if user_confirmation_dialog(
-            f"This will delete the existing EasyBuild stack at: {sb_config.installpath}"
+        if (
+            user_confirmation_dialog(
+                "WARNING: you requested to rebuild the software stack from scratch.",
+                "         This will delete the existing EasyBuild stack at: "
+                f"{sb_config.installpath}",
+            )
+            is UserAnswer.YES
         ):
             delete_directory_content(sb_config.installpath, verbose=True)
         else:

@@ -28,6 +28,14 @@ NO_AVX2_PACKAGES = [
 ]
 
 
+class UserAnswer(Enum):
+    """User confirmation."""
+
+    YES = "yes"
+    NO = "no"
+    INTERACTIVE = "interactive"
+
+
 class SIBNode(Enum):
     """SIB node names."""
 
@@ -38,12 +46,18 @@ class SIBNode(Enum):
     VIT = "vitalit"  # SIB lausanne
 
 
+USER_ANSWER_SYNONYMS: Dict[UserAnswer, Tuple[str, ...]] = {
+    UserAnswer.YES: (UserAnswer.YES.value, "y", "True", "true"),
+    UserAnswer.NO: (UserAnswer.NO.value, "n", "False", "false"),
+    UserAnswer.INTERACTIVE: (UserAnswer.INTERACTIVE.value,),
+}
+
 SIB_NODE_SYNONYMS: Dict[SIBNode, Tuple[str, ...]] = {
-    SIBNode.HUG: ("hug", "HUG"),
-    SIBNode.IBU: ("ibu", "IBU"),
-    SIBNode.SCI: ("scicore", "sci", "SCI"),
-    SIBNode.UBE: ("ubelix", "ube", "UBE"),
-    SIBNode.VIT: ("vitalit", "vital-it", "vit", "VIT"),
+    SIBNode.HUG: (SIBNode.HUG.value, "HUG"),
+    SIBNode.IBU: (SIBNode.IBU.value, "IBU"),
+    SIBNode.SCI: (SIBNode.SCI.value, "sci", "SCI"),
+    SIBNode.UBE: (SIBNode.UBE.value, "ube", "UBE"),
+    SIBNode.VIT: (SIBNode.VIT.value, "vital-it", "vit", "VIT"),
 }
 
 
@@ -66,7 +80,8 @@ class StackBuilderConfig:
         optional_software: Optional[Sequence[SIBNode]] = None,
         optarch: Optional[str] = None,
         job_cores: Union[int, str] = 0,
-        confirm_hard_reset: bool = True,
+        allow_reset_node_branch: UserAnswer = UserAnswer.INTERACTIVE,
+        allow_reset_other_nodes_branch: UserAnswer = UserAnswer.INTERACTIVE,
     ) -> None:
 
         # Required EasyBuild properties.
@@ -88,7 +103,8 @@ class StackBuilderConfig:
             main_branch_name=SIB_SOFT_STACK_MAIN_BRANCH,
             main_remote_name="origin",
         )
-        self.confirm_hard_reset = confirm_hard_reset
+        self.allow_reset_node_branch = allow_reset_node_branch
+        self.allow_reset_other_nodes_branch = allow_reset_other_nodes_branch
 
         # Optional EasyBuild properties.
         self.optarch = optarch
@@ -192,8 +208,8 @@ class StackBuilderConfig:
 
 
 def str_to_node(node_name: str) -> SIBNode:
-    """Returns the SIBNode object corresponding to a the given node name or
-    one if its synonyms.
+    """Returns the SIBNode object corresponding to the given node name or one
+    if its synonyms.
     """
     for node, synonyms in SIB_NODE_SYNONYMS.items():
         if node_name in synonyms:
@@ -213,6 +229,37 @@ def str_to_node(node_name: str) -> SIBNode:
     )
 
 
+def str_to_useranswer(value: str) -> UserAnswer:
+    """Converts a string value into the corresponding UserAnswer Enum value."""
+
+    for user_answer, synonyms in USER_ANSWER_SYNONYMS.items():
+        if value.lower() in synonyms:
+            return user_answer
+
+    raise ValueError(
+        f"The value '{value}' does not match any accepted 'user answer' or "
+        "one if its synonyms. Accepted values are: "
+        + "; ".join(
+            [
+                f"{user_answer.value}: {', '.join(synonyms)}"
+                for user_answer, synonyms in USER_ANSWER_SYNONYMS.items()
+            ]
+        )
+        + "."
+    )
+
+
+def str_to_list(value: str) -> List[str]:
+    """Converts a string to a list of strings by splitting it using a number
+    of pre-defined separators.
+    """
+    value = value.strip()
+    for sep in (":", ";", ","):
+        if sep in value:
+            return [x.strip() for x in value.split(sep)]
+    return [value]
+
+
 def config_values_from_file(
     config_file_path: str, args_required: Sequence[str], args_optional: Sequence[str]
 ) -> Dict[str, Any]:
@@ -222,7 +269,6 @@ def config_values_from_file(
     # values delimited by ":" characters.
     args_captured: Dict[str, Any] = {}
     sequence_args = ("robot_paths", "other_nodes", "optional_software")
-    boolean_args = ("confirm_hard_reset",)
 
     # Read through the config file, load required and optional arguments, and
     # ignore comment lines.
@@ -237,20 +283,7 @@ def config_values_from_file(
             value = value.replace('"', "")
             if argument in args_required or argument in args_optional:
                 if argument in sequence_args:
-                    args_captured[argument] = value.split(":")
-                elif argument in boolean_args:
-                    value = value.capitalize()
-                    if value == "True":
-                        args_captured[argument] = True
-                    elif value == "False":
-                        args_captured[argument] = False
-                    else:
-                        raise ValueError(
-                            "Bad argument value detected in "
-                            f"config file: {config_file_path}\n"
-                            f" -> argument '{argument}' must be either "
-                            "'True' or 'False'."
-                        )
+                    args_captured[argument] = str_to_list(value)
                 else:
                     args_captured[argument] = value
 
@@ -287,7 +320,8 @@ def load_config() -> StackBuilderConfig:
                 "sib_easyconfigs_repo",
                 "sib_software_stack_repo",
                 "sib_node",
-                "confirm_hard_reset",
+                "allow_reset_node_branch",
+                "allow_reset_other_nodes_branch",
             ),
             args_optional=("other_nodes", "optional_software"),
         )
@@ -298,6 +332,10 @@ def load_config() -> StackBuilderConfig:
     for arg_name in ("other_nodes", "optional_software"):
         if arg_name in args_captured:
             args_captured[arg_name] = list(map(str_to_node, args_captured[arg_name]))
+
+    # Convert UserAnswer strings into UserAnswer objects.
+    for arg_name in ("allow_reset_node_branch", "allow_reset_other_nodes_branch"):
+        args_captured[arg_name] = str_to_useranswer(args_captured[arg_name])
 
     # Verify that all path values given in the config files exist on disk.
     # Note: the code is a bit tedious because we want to specify the name of

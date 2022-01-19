@@ -1,11 +1,14 @@
 """Module with general functions."""
 
 import os
+import re
 import sys
 import shutil
 import subprocess  # nosec
 from pathlib import Path
 from typing import Sequence, Optional, Iterator, Union
+
+from .config import UserAnswer
 
 
 def create_directory(
@@ -109,13 +112,13 @@ def run_subprocess(
     return None
 
 
-def user_confirmation_dialog(msg: str) -> bool:
-    """Displays a user confirmation dialog requesting the user for
-    confirmation to proceed.
-    """
+def user_confirmation_dialog(*messages: str) -> UserAnswer:
+    """Displays a dialog requesting the user for confirmation to proceed."""
+
     msg = (
-        f"### WARNING: {msg}\n"
-        "###          (warning can be suppressed in the stack-builder config file)\n"
+        "### " + "\n### ".join(messages) + "\n"
+        "###          Note: confirmation requests can be suppressed in the "
+        "stack-builder config file.\n"
         "###          Are you sure you want to proceed [yes/y/no/n]?: "
     )
-    return input(msg).lower() in ("y", "yes")
+    return UserAnswer.YES if input(msg).lower() in ("y", "yes") else UserAnswer.NO

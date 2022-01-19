@@ -3,11 +3,62 @@
 from ..utils.git import GitRepo, Status
 from ..utils.config import (
     StackBuilderConfig,
+    UserAnswer,
     load_config,
     EB_OFFICIAL_REPO,
     EB_OFFICIAL_REPO_NAME,
 )
 from ..utils.utils import user_confirmation_dialog
+
+
+def pull_or_reset_to_upstream(
+    branch_name: str, repo: GitRepo, allow_reset: UserAnswer
+) -> None:
+    """Updates the specified branch by either
+
+    :param allow_reset: whether the reseting of the branch, if needed, should
+        be allowed automatically, not allowed, or will prompt the user for
+        an interactive answer.
+    """
+
+    # Determine branch status. If the branch is up-to-date or ahead of its
+    # remote tracking branch, there is nothing to do.
+    status = repo.branch_status(branch_name)
+    if status in (Status.UP_TO_DATE, Status.AHEAD):
+        print(f"###  -> branch '{branch_name}' is up-to-date with its upstream.")
+        return
+
+    # Retrieve the remote branch associated to the branch. In principle, there
+    # is no scenario where the branch has no remote tracking branch.
+    branch = repo.branch(branch_name)
+    remote_branch = branch.tracking_branch()
+    assert remote_branch
+    remote_name = f"{remote_branch.remote_name}/{branch_name}"
+
+    # If the branch has diverged, request reset confirmation from user - if
+    # needed.
+    if status is Status.BEHIND:
+        print(f"###  -> updating branch '{branch_name}' from '{remote_name}'.")
+    elif status is Status.DIVERGED:
+        print(f"###  -> branch '{branch_name}' has diverged from '{remote_name}'.")
+        if allow_reset is UserAnswer.INTERACTIVE:
+            allow_reset = user_confirmation_dialog(
+                f"WARNING: branch '{branch_name}' will be reset to '{remote_name}'.",
+                f"         Any local changes to '{branch_name}' will be lost!",
+            )
+
+    # Update the branch via pull or reset - if allowed:
+    #  -> If the branch is behind its remote tracking branch, it can simply be
+    #     updated with a pull. A pull is also made if the user had not allowed
+    #     restting, so that an error is triggered.
+    #  -> If a reset is needed and the user has allowed it, reset the branch.
+    if status is Status.BEHIND or allow_reset is UserAnswer.NO:
+        repo.pull_branch(branch_name, with_fetch=False)
+    else:
+        print(f"###     resetting '{branch_name}'.")
+        repo.reset_branch(branch=branch, ref_to_reset_to=remote_branch.commit)
+
+    return
 
 
 def update_local_repo(repo: GitRepo, sb_config: StackBuilderConfig) -> None:
@@ -38,19 +89,26 @@ def update_local_repo(repo: GitRepo, sb_config: StackBuilderConfig) -> None:
     assert node_branch in repo.branch_names and main_branch in repo.branch_names
 
     # Fetch updates for the repo and pull changes for the main branch and the
-    # node's local branch. If these branches have diverged from their upstream,
-    # i.e. they cannot be fast-forwarded, an error is raised.
-    for branch in (main_branch, node_branch):
-        print(f"###  -> updating branch '{branch}' from upstream.")
-        repo.pull_branch(branch_name=branch, with_fetch=True)
+    # node's local branch:
+    #  -> If the main branch has diverged from its upstream, i.e. it cannot be
+    #     fast-forwarded, an error is raised.
+    #  -> If the node branch has diverged, it is either reset or an error is
+    #     raised, depending on the user settings.
+    repo.fetch_updates()
+    for branch, allow_reset in (
+        (main_branch, UserAnswer.NO),
+        (node_branch, sb_config.allow_reset_node_branch),
+    ):
+        pull_or_reset_to_upstream(branch, repo, allow_reset)
 
-    # Rebase or merge the local node's branch on the main branch, if needed.
+    # Rebase or merge the local node's branch on/into the main branch,
+    # if needed.
     status = repo.branch_status(node_branch, branch_to_compare_with=main_branch)
     if status is Status.BEHIND:
         print(f"###  -> merging branch '{main_branch}' into '{node_branch}'.")
         repo.merge_branch(node_branch, branch_to_merge=main_branch)
         print(f"###  -> pushing changes on branch '{node_branch}' to remote.")
-        repo.push_branch(node_branch)
+        repo.push_branch(node_branch, allow_force=False)
 
     elif status is Status.DIVERGED:
         # Verify the repo is clean. If there are uncommitted changes, the
@@ -75,20 +133,9 @@ def update_local_repo(repo: GitRepo, sb_config: StackBuilderConfig) -> None:
     # In principle this should be infrequent, as there is no need for a local
     # node to have a local copy of other node's branches.
     for branch in set(sb_config.other_node_branch_names) & set(repo.branch_names):
-        status = repo.branch_status(branch)
-        if status is Status.BEHIND:
-            print(f"###  -> updating branch '{branch}' from upstream.")
-            repo.pull_branch(branch_name=branch, with_fetch=False)
-        elif status is Status.DIVERGED:
-            print(
-                f"###  -> local branch '{branch}' has diverged from "
-                "its upstream and will be hard reset."
-            )
-            if not sb_config.confirm_hard_reset or user_confirmation_dialog(
-                f"any local changes to branch '{branch}' will be lost!"
-            ):
-                print(f"###  -> resetting local branch '{branch}' to its upstream.")
-                repo.reset_branch_to_upstream(branch_name=branch, with_fetch=False)
+        pull_or_reset_to_upstream(
+            branch, repo, allow_reset=sb_config.allow_reset_other_nodes_branch
+        )
 
 
 def update_from_easybuild_upstream(sb_config: StackBuilderConfig) -> None:
