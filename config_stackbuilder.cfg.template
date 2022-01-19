@@ -1,0 +1,38 @@
+# SIB software stack-builder mandatory values:
+
+# Path to local instance of https://github.com/sib-swiss/sib-software-stack
+sib_software_stack_repo = ~/sib-software-stack.git
+
+# Path to local instance of https://github.com/sib-swiss/easybuild-easyconfigs
+sib_easyconfigs_repo = ~/sib-easyconfigs.git
+
+# Name of the local node/institution. One of: ubelix, ibu, scicore, vitalit.
+sib_node = REPLACE_ME
+
+# Handling of confirmation requests when a branch reset is performed, either
+# on the node's own branch (allow_reset_node_branch) or on branches from other
+# nodes (allow_reset_other_nodes_branch).
+# Possible values for these arguments are:
+#  - "interactive": each time a branch reset has to be performed, the user
+#                   will be prompted for an interactive answer.
+#  - "yes": always accept branch rebase operations. Please note that this can
+#           potentially result in commit losses on your local branch.
+#  - "no": always reject branch rebase operations.
+allow_reset_node_branch = "interactive"
+allow_reset_other_nodes_branch = "interactive"
+
+# Branches from other SIB nodes/institutions on which to search for
+# easyconfigs (your own branch is always searched):
+#  -> "all": search all available branches.
+#  -> comma separated branch list: restrict search to the specified branches.
+#     Examples: "ibu" (single branch). "ubelix","scicore" (list of branches).
+#other_nodes = "vitalit","scicore"
+
+# Optional software packages to build
+# In the package list file, lines that are prefixed with one or more node name
+# abbreviations (e.g. "VIT" or "VIT","HUG") are only build on the specified
+# nodes.
+# By default, only optional packages for the local node ("sib_node" argument)
+# are built. A custom list (comma separated) can be specified here:
+#optional_software = "VIT","HUG"
+
