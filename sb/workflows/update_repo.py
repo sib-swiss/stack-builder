@@ -173,7 +173,7 @@ def update_from_easybuild_upstream(sb_config: StackBuilderConfig) -> None:
             print(f"###  -> branch '{branch_name}' is up-to-date, nothing to do.")
 
         elif status is Status.BEHIND:
-            print(f"###  -> updating branch '{branch_name}'.")
+            print(f"###  -> updating branch '{branch_name}' from EasyBuild.")
 
             # Make sure the local copy of branch "develop"/"main" is up-to-date
             # with the latest version on the SIB remote.
@@ -206,19 +206,20 @@ def update_from_easybuild_upstream(sb_config: StackBuilderConfig) -> None:
             )
 
 
-def update_repos() -> None:
+def update_repos(from_upstream: bool = False) -> None:
     """Main workflow of the 'update' command."""
 
     # Load the EasyBuild and StackBuilder configuration values.
     sb_config = load_config()
 
     # Get updates from the official EasyBuild upstream repo.
-    print(
-        f"### Updating repo {sb_config.sib_easyconfigs_repo.name} "
-        f"from {EB_OFFICIAL_REPO}:"
-    )
-    update_from_easybuild_upstream(sb_config=sb_config)
-    print("### ")
+    if from_upstream:
+        print(
+            f"### Updating repo {sb_config.sib_easyconfigs_repo.name} "
+            f"from {EB_OFFICIAL_REPO}:"
+        )
+        update_from_easybuild_upstream(sb_config=sb_config)
+        print("### ")
 
     # Update the SIB Git repos.
     for repo in (sb_config.sib_easyconfigs_repo, sb_config.sib_software_stack_repo):

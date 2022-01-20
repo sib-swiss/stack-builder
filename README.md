@@ -41,27 +41,37 @@ To be completed...
 
 ## Commands overview
 *stack-builder* has 2 main commands:
-* **`build-stack`:** build or update a local instance of the SIB software stack. Shortcuts for this
-  command are **`build`** and **`bs`**
-* **`update-repos`:** update the local instances of the `sib-easyconfigs.git` and
-  `sib-software-stack.git` git repositories. Shortcuts for this command are **`update`** and
-  **`ur`**
+* **`build`/`bs`/`build-stack`:** builds or updates a local instance of the SIB software stack.
+
+* **`update`/`ur`/`update-repos`:** updates the local instances of the `sib-easyconfigs.git` and
+  `sib-software-stack.git` git repositories from the remote.
+
+  `--from-upstream`/`-u`
 
 ### update-repos
-Updates the local instances of the `sib-easyconfigs.git` and `sib-software-stack.git` git repositories.
+The **`update`/`ur`** command updates the local instances of the `sib-easyconfigs.git` and
+`sib-software-stack.git` git repositories from their respective remotes.
+
+To additionally fetch updates from the
+[official EasyBuild easyconfigs repository](https://github.com/easybuilders/easybuild-easyconfigs),
+the **`--from-upstream`/`-u`** option can be passed. When using this option, updates from the
+*EasyBuild* repo for the `develop` and `main` branches are fetched, merged into the local
+instance of the `sib-easyconfigs` repository, and pushed to the
+[sib-easyconfigs remote](https://github.com/sib-swiss/easybuild-easyconfigs).
+
 ```
-./sb.py update-repos
-./sb.py update
-./sb.py ur
+sb.py update
+sb.py update -u   # Fetches updates from EasyBuild, updates the local repo, and pushes the updates
+                  # to the sib-easyconfigs remote.
 ```
 
 
 ### build-stack
 To build the entire software stack, the following commands can be used:
 ```
-stack_builder.py --summary   # Display a summary of the tasks to perform.
-stack_builder.py --dry-run   # Do a test-run: this will check that all easyconfig files are found.
-stack_builder.py             # Run the actual build.
+sb.py --summary   # Display a summary of the tasks to perform.
+sb.py --dry-run   # Do a test-run: this will check that all easyconfig files are found.
+sb.py             # Run the actual build.
 ```
 
 All available options and their shortcuts can be displayed with `./stack_builder.py --help`

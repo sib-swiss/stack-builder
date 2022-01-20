@@ -53,6 +53,16 @@ class Cli(CliWithSubcommands):
         Subcommand(
             f=update_repos,
             aliases=("update", "ur"),
+            arguments=(
+                Argument(
+                    "-u",
+                    "--from-upstream",
+                    dest="from_upstream",
+                    help="Fetch updates from the upstream EasyBuild repo.",
+                    default=False,
+                    action="store_true",
+                ),
+            ),
             help_text=f"Update the '{SIB_EASYCONFIGS_REPO}' and "
             f"'{SIB_SOFTWARE_STACK_REPO}' repositories.",
         ),
