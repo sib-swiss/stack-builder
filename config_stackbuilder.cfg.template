@@ -19,7 +19,7 @@ sib_node = REPLACE_ME
 #           potentially result in commit losses on your local branch.
 #  - "no": always reject branch rebase operations.
 allow_reset_node_branch = "interactive"
-allow_reset_other_nodes_branch = "interactive"
+allow_reset_other_nodes_branch = "yes"
 
 # Branches from other SIB nodes/institutions on which to search for
 # easyconfigs (your own branch is always searched):
