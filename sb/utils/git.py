@@ -181,7 +181,7 @@ class GitRepo(git.Repo):
     def fetch_updates(self) -> None:
         """Fetch updates from all remotes associated to the repo."""
         for remote in self.remotes:
-            remote.fetch()
+            remote.fetch("--prune")
 
     def switch(self, branch_name: str) -> None:
         """Switch/checkout to the specified branch."""
