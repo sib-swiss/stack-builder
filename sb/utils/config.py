@@ -44,6 +44,7 @@ class SIBNode(Enum):
     SCI = "scicore"  # sciCORE
     UBE = "ubelix"  # UBELIX cluster
     VIT = "vitalit"  # SIB lausanne
+    TEST = "test_node"  # Node for running tests.
 
 
 USER_ANSWER_SYNONYMS: Dict[UserAnswer, Tuple[str, ...]] = {
@@ -58,6 +59,7 @@ SIB_NODE_SYNONYMS: Dict[SIBNode, Tuple[str, ...]] = {
     SIBNode.SCI: (SIBNode.SCI.value, "sci", "SCI"),
     SIBNode.UBE: (SIBNode.UBE.value, "ube", "UBE"),
     SIBNode.VIT: (SIBNode.VIT.value, "vital-it", "vit", "VIT"),
+    SIBNode.TEST: (SIBNode.TEST.value, "TEST"),
 }
 
 
