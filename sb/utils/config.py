@@ -24,6 +24,7 @@ EB_OFFICIAL_REPO_NAME = "eb-source"
 NO_AVX2_PACKAGES = [
     "FFTW-3.3.9-gompi-2021a.eb",
     "RDKit-2021.03.4-foss-2021a.eb",
+    "RDKit-2022.03.3-foss-2021a.eb",
     "OpenBabel-3.1.1-gompi-2021a.eb",
 ]
 
