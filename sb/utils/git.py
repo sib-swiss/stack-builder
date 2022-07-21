@@ -219,7 +219,7 @@ class GitRepo(git.Repo):
 
         # Checkout the specified reference in "detached head" mode.
         try:
-            self.git.checkout("-d", refspec)
+            self.git.checkout("--detach", refspec)
         except git.GitCommandError as e:
             if "would be overwritten" in str(e):
                 error_msg = "repo contains uncommitted changes."
