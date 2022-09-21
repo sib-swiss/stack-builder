@@ -14,9 +14,16 @@ from ..utils.utils import user_confirmation_dialog
 def pull_or_reset_to_upstream(
     branch_name: str, repo: GitRepo, allow_reset: UserAnswer
 ) -> None:
-    """Updates the specified branch by either
+    """Updates the specified branch by either:
+     * Pulling changes from the branch's upstream if the branch is behind
+       its upstream branch.
+     * Resetting the branch to its upstream if the branch has diverged from
+       its upstream branch. Depending on the value of "allow_reset", user
+       confirmation is requested.
 
-    :param allow_reset: whether the reseting of the branch, if needed, should
+    :param branch_name: name of branch to update via a pull/reset.
+    :param repo: GitRepo of the branch to update.
+    :param allow_reset: whether the resetting of the branch, if needed, should
         be allowed automatically, not allowed, or will prompt the user for
         an interactive answer.
     """
@@ -29,7 +36,7 @@ def pull_or_reset_to_upstream(
         return
 
     # Retrieve the remote branch associated to the branch. In principle, there
-    # is no scenario where the branch has no remote tracking branch.
+    # is no scenario where a branch has no remote tracking branch.
     branch = repo.branch(branch_name)
     remote_branch = branch.tracking_branch()
     assert remote_branch
@@ -49,8 +56,8 @@ def pull_or_reset_to_upstream(
 
     # Update the branch via pull or reset - if allowed:
     #  -> If the branch is behind its remote tracking branch, it can simply be
-    #     updated with a pull. A pull is also made if the user had not allowed
-    #     restting, so that an error is triggered.
+    #     updated with a pull. A pull is also made if the user has not allowed
+    #     resetting, so that an error is triggered.
     #  -> If a reset is needed and the user has allowed it, reset the branch.
     if status is Status.BEHIND or allow_reset is UserAnswer.NO:
         repo.pull_branch(branch_name, with_fetch=False)

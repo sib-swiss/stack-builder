@@ -66,7 +66,7 @@ class Subcommand(SubcommandBase):
 
 
 class CliWithSubcommands:
-    """Entry point to command line interfaces. This is the class that
+    """Entry point to the command line interface. This is the class that
     instantiates the main (top level) parser for the CLI, that invokes it, and
     retrieves the values passed by the user on the command line.
 
@@ -127,7 +127,7 @@ class CliWithSubcommands:
             for subcommand in self.subcommands:
                 self.add_subcommand(subcommand)
 
-        # Retrive command line arguments passed by the user. user_input_args is
+        # Retrieve command line arguments passed by the user. user_input_args is
         # a dictionary with all the arguments passed by the user on the command
         # line.
         user_input_args = vars(parser.parse_args(*args, **kwargs))

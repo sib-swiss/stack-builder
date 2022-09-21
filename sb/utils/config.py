@@ -232,7 +232,7 @@ def str_to_node(node_name: str) -> SIBNode:
     )
 
 
-def str_to_useranswer(value: str) -> UserAnswer:
+def str_to_user_answer(value: str) -> UserAnswer:
     """Converts a string value into the corresponding UserAnswer Enum value."""
 
     for user_answer, synonyms in USER_ANSWER_SYNONYMS.items():
@@ -336,9 +336,9 @@ def load_config() -> StackBuilderConfig:
         if arg_name in args_captured:
             args_captured[arg_name] = list(map(str_to_node, args_captured[arg_name]))
 
-    # Convert UserAnswer strings into UserAnswer objects.
+    # Convert "user answer" strings into UserAnswer objects.
     for arg_name in ("allow_reset_node_branch", "allow_reset_other_nodes_branch"):
-        args_captured[arg_name] = str_to_useranswer(args_captured[arg_name])
+        args_captured[arg_name] = str_to_user_answer(args_captured[arg_name])
 
     # Verify that all path values given in the config files exist on disk.
     # Note: the code is a bit tedious because we want to specify the name of
@@ -377,9 +377,9 @@ def load_config() -> StackBuilderConfig:
 
 def config_file_from_environment_variable(environment_var_name: str) -> Optional[str]:
     """Test whether the specified shell environment variable exists and:
-    * if True, further test whether it points to an existing file, and if so,
-      return that file. Raises an error otherwise.
-    * if False, returns None.
+    * If True, check whether it points to an existing file, and if so,
+      return that file. Raise an error otherwise.
+    * If False, returns None.
     """
     if environment_var_name in os.environ:
         config_file = Path(os.path.expanduser(os.environ[environment_var_name]))
@@ -425,7 +425,8 @@ def get_eb_config_file() -> str:
 
 def get_sb_config_file() -> str:
     """Search for a stack-builder config file in different locations and return
-    the path to the file if found.
+    the path of the config file if found.
+
     The following locations are searched:
      * STACKBUILDER_CONFIGFILES environment variable.
      * EASYBUILD_CONFIGFILES environment variable.

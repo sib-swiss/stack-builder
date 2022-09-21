@@ -1,6 +1,7 @@
 """Module for the "build stack" workflow of the application, which builds or
 updates the local instance of the SIB software stack.
 """
+
 import os
 import shutil
 from contextlib import contextmanager

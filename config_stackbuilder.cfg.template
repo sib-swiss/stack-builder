@@ -22,10 +22,14 @@ allow_reset_node_branch = "interactive"
 allow_reset_other_nodes_branch = "yes"
 
 # Branches from other SIB nodes/institutions on which to search for
-# easyconfigs (your own branch is always searched):
-#  -> "all": search all available branches.
-#  -> comma separated branch list: restrict search to the specified branches.
-#     Examples: "ibu" (single branch). "ubelix","scicore" (list of branches).
+# easyconfigs. By default (if no value is provided), all other SIB nodes
+# branches are searched.
+#  -> To search only a subset of branches, set the "other_nodes" variable to a
+#     comma-separated list of branches. This restricts the search to only the
+#     specified branches. Examples:
+#      * other_nodes = "ibu" (search only on the "ibu" branch).
+#      * other_nodes = "ubelix","scicore" (search only the 2 specified branches).
+#  -> To search no other branches, set the variable to your own branch.
 #other_nodes = "vitalit","scicore"
 
 # Optional software packages to build
