@@ -181,7 +181,7 @@ class GitRepo(git.Repo):
     def fetch_updates(self) -> None:
         """Fetch updates from all remotes associated to the repo."""
         for remote in self.remotes:
-            remote.fetch("--prune")
+            remote.fetch(prune=True)
 
     def switch(self, branch_name: str) -> None:
         """Switch/checkout to the specified branch."""
@@ -208,11 +208,11 @@ class GitRepo(git.Repo):
     def checkout(self, refspec: str) -> None:
         """Checkout the working tree to the specified reference, e.g. a commit
         or a remote branch (e.g. "origin/branch").
-        Local branches can also be checkout-out, but using "self.switch()" is
-        perferred for that use case.
+        Local branches can also be checkout-out, but using `self.switch()` is
+        preferred for that use case.
         """
         # If the specified reference is a local branch, fallback on the
-        # "switch" command.
+        # `switch` command.
         if refspec in self.branch_names:
             self.switch(branch_name=refspec)
             return
@@ -266,11 +266,10 @@ class GitRepo(git.Repo):
         error_on_diverged: bool = True,
     ) -> None:
         """Perform a git pull (fetch + merge) on the specified branch. The pull
-        opperation is only performed if the merge with the upstream branch is
+        operation is only performed if the merge with the upstream branch is
         fast-forward. If history has diverged, an error is raised.
 
         :param branch_name: name of branch to update.
-        :param repo: git repository to update.
         :param with_fetch: if True, a git fetch is performed before checking
             whether the branch is up-to-date and can be fast-forward merged.
         :param error_on_missing_upstream: if True, an error is raised in the
@@ -357,7 +356,7 @@ class GitRepo(git.Repo):
                 remote = self.remote(remote_branch.remote_name)
 
         # Perform git push with the appropriate options depending on the
-        # branche's status.
+        # branch's status.
         # Note: nothing to do for Status.UP_TO_DATE and Status.BEHIND.
         if status is Status.AHEAD:
             info = remote.push(refspec=branch_name)[0]
@@ -369,7 +368,7 @@ class GitRepo(git.Repo):
                 if info.flags != info.FORCED_UPDATE:
                     cmd_with_error = "git push --force"
             else:
-                GitRepoError(
+                raise GitRepoError(
                     f"Branch '{branch_name}' cannot be pushed to the "
                     f"remote '{remote.name}' because its history with the "
                     "upstream branch has diverged. "
