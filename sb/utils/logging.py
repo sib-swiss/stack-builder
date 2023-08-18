@@ -19,11 +19,11 @@ def print_summary_start(
     """Print input data summary."""
 
     pkgs_not_found = [x for x in pkgs_to_build if x not in easyconfigs_to_build]
-    pkgs_to_build_info = (
+    pkgs_to_build_info = [
         f"{x} [{easyconfigs_to_build[x].path}] [branch={easyconfigs_to_build[x].branch}]"
         for x in pkgs_to_build
         if x not in pkgs_not_found
-    )
+    ]
     print(
         "#" * 100 + "\n",
         "### EasyBuild config:\n",
@@ -54,13 +54,14 @@ def print_summary_start(
             "### ",
             sep="",
         )
-    if pkgs_to_build_info:
-        print(
-            "### Packages to build:\n",
-            "###  -> " + "\n###  -> ".join(pkgs_to_build_info) + "\n",
-            "### ",
-            sep="",
-        )
+    if not pkgs_to_build_info:
+        pkgs_to_build_info = ["All packages already built - nothing to do."]
+    print(
+        "### Packages to build:\n",
+        "###  -> " + "\n###  -> ".join(pkgs_to_build_info) + "\n",
+        "### ",
+        sep="",
+    )
     if pkgs_not_found:
         print(
             "### Packages not found:\n",

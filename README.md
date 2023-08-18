@@ -6,6 +6,11 @@ Essentially, *stack-builder* parses an input text file -
 `sib_stack_package_list.txt` - and build the listed software packages in the
 specified order (as well as all their required dependencies).
 
+**Tip:** for local development purposes, you can override the content of
+`sib_stack_package_list.txt` by creating a file named `package_list.txt`. This
+allows e.g. to build only a subset of the entire `sib_stack_package_list.txt`
+file content.
+
 ## Requirements
 
 * python >= 3.6
